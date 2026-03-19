@@ -12,6 +12,7 @@
     "@privy-io/react-auth": "^2.0.0",
     "@upstash/redis": "^1.37.0",
     "next": "^15.1.0",
+    "ox": "^0.14.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

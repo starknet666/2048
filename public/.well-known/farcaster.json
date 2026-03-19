@@ -1,0 +1,20 @@
+{
+  "accountAssociation": {
+    "header": "",
+    "payload": "",
+    "signature": ""
+  },
+  "frame": {
+    "version": "1",
+    "name": "2048 on Base",
+    "subtitle": "The classic puzzle game, onchain",
+    "description": "Play 2048 with 3x3, 4x4, 5x5 modes. Daily GM check-in, Early Adopter NFT, and global leaderboard — all on Base.",
+    "iconUrl": "https://2048onbased.vercel.app/app-icon-1024.png",
+    "splashImageUrl": "https://2048onbased.vercel.app/app-icon-1024.png",
+    "splashBackgroundColor": "#f0f2f5",
+    "homeUrl": "https://2048onbased.vercel.app",
+    "webhookUrl": "https://2048onbased.vercel.app/api/webhook",
+    "primaryCategory": "games",
+    "tags": ["2048", "puzzle", "game", "base", "onchain"]
+  }
+}

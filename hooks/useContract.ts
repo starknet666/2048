@@ -3,6 +3,9 @@
 import { useCallback, useState } from "react";
 import { createPublicClient, createWalletClient, custom, http, decodeEventLog } from "viem";
 import { base } from "viem/chains";
+import { Attribution } from "ox/erc8021";
+
+const DATA_SUFFIX = Attribution.toDataSuffix({ codes: ["bc_vdsgq9gw"] });
 let useWallets: () => { wallets: Array<{ address: string; switchChain: (id: number) => Promise<void>; getEthereumProvider: () => Promise<unknown> }> };
 try {
   useWallets = require("@privy-io/react-auth").useWallets;
@@ -31,6 +34,7 @@ export function useContract() {
       chain: base,
       transport: custom(provider as Parameters<typeof custom>[0]),
       account: wallet.address as `0x${string}`,
+      dataSuffix: DATA_SUFFIX,
     });
   }, [wallets]);
 
