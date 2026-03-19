@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import type { GridSize } from "@/lib/game";
-import { getLeaderboard, type LeaderboardEntry } from "@/lib/leaderboard";
+import { fetchLeaderboard, type LeaderboardEntry } from "@/lib/leaderboard";
 
 interface LeaderboardProps {
   onBack: () => void;
@@ -29,10 +29,15 @@ function getMedal(index: number): string | null {
 export default function Leaderboard({ onBack }: LeaderboardProps) {
   const [activeTab, setActiveTab] = useState<GridSize>(4);
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [loading, setLoading] = useState(true);
   const { address } = useAuth();
 
   useEffect(() => {
-    setEntries(getLeaderboard(activeTab));
+    setLoading(true);
+    fetchLeaderboard(activeTab).then((data) => {
+      setEntries(data);
+      setLoading(false);
+    });
   }, [activeTab]);
 
   return (
@@ -73,7 +78,11 @@ export default function Leaderboard({ onBack }: LeaderboardProps) {
       </div>
 
       <div className="w-full glass-card rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.04)] overflow-hidden">
-        {entries.length === 0 ? (
+        {loading ? (
+          <div className="py-12 flex justify-center">
+            <div className="w-6 h-6 border-2 border-base-blue border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : entries.length === 0 ? (
           <div className="py-12 text-center">
             <div className="text-3xl mb-2">🏆</div>
             <p className="text-[#8b8fa3] text-sm font-medium">
@@ -91,7 +100,7 @@ export default function Leaderboard({ onBack }: LeaderboardProps) {
 
               return (
                 <div
-                  key={`${entry.address}-${entry.mode}`}
+                  key={`${entry.address}-${activeTab}`}
                   className={`flex items-center gap-3 px-4 py-3 transition-colors
                     ${isMe ? "bg-blue-50/60" : "hover:bg-[#f8f9fc]/60"}`}
                 >
@@ -134,7 +143,7 @@ export default function Leaderboard({ onBack }: LeaderboardProps) {
       </div>
 
       <p className="text-[10px] text-[#c0c4d8] text-center">
-        Log in to submit scores to the leaderboard
+        Scores are saved automatically at end of each game
       </p>
     </div>
   );

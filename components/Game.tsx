@@ -20,6 +20,7 @@ import {
   setMuted,
   initMuted,
 } from "@/lib/sounds";
+import { submitScore } from "@/lib/leaderboard";
 import { useSwipe } from "@/hooks/useSwipe";
 import Board from "./Board";
 import ScoreBoard from "./ScoreBoard";
@@ -82,6 +83,7 @@ export default function Game({ gridSize, onBack }: GameProps) {
           }
           if (next.gameOver) {
             setTimeout(playGameOver, 200);
+            if (address) submitScore(address, next.score, gridSize);
           }
         }
         return next;
@@ -153,8 +155,11 @@ export default function Game({ gridSize, onBack }: GameProps) {
   }, []);
 
   const handleBack = useCallback(() => {
+    if (address && gameState && gameState.score > 0) {
+      submitScore(address, gameState.score, gridSize);
+    }
     onBack();
-  }, [onBack]);
+  }, [onBack, address, gameState, gridSize]);
 
   if (!gameState) {
     return (

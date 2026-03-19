@@ -11,6 +11,9 @@ export const metadata: Metadata = {
     description: "Play 2048 on Base — the classic puzzle game, onchain.",
     type: "website",
   },
+  other: {
+    "base:app_id": "69bc6bd4945e0bb74a271f7c",
+  },
 };
 
 export const viewport: Viewport = {

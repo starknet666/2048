@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
+import BaseAppGate from "@/components/BaseAppGate";
 import WalletConnect from "@/components/WalletConnect";
 import ModeSelect from "@/components/ModeSelect";
 import type { GridSize } from "@/lib/game";
@@ -21,7 +22,7 @@ export default function Home() {
   };
 
   return (
-    <>
+    <BaseAppGate>
       <div className="animated-bg">
         <div className="orb orb-1" />
         <div className="orb orb-2" />
@@ -74,6 +75,6 @@ export default function Home() {
           )}
         </div>
       </main>
-    </>
+    </BaseAppGate>
   );
 }
