@@ -1,56 +1,72 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { createPublicClient, createWalletClient, custom, http, decodeEventLog } from "viem";
+import {
+  createPublicClient,
+  http,
+  decodeEventLog,
+  encodeFunctionData,
+  type Hex,
+} from "viem";
 import { base } from "viem/chains";
 import { Attribution } from "ox/erc8021";
-
-const DATA_SUFFIX = Attribution.toDataSuffix({ codes: ["bc_vdsgq9gw"] });
-let useWallets: () => { wallets: Array<{ address: string; switchChain: (id: number) => Promise<void>; getEthereumProvider: () => Promise<unknown> }> };
-try {
-  useWallets = require("@privy-io/react-auth").useWallets;
-} catch {
-  useWallets = () => ({ wallets: [] });
-}
 import { GAME_CONTRACT_ADDRESS, GAME_CONTRACT_ABI } from "@/lib/contract";
 import type { GridSize } from "@/lib/game";
+
+const DATA_SUFFIX = Attribution.toDataSuffix({ codes: ["bc_vdsgq9gw"] });
+
+let useSendTransaction: () => {
+  sendTransaction: (
+    tx: { to: string; data: string; value?: number },
+    opts?: { sponsor?: boolean }
+  ) => Promise<{ transactionHash: string }>;
+};
+try {
+  useSendTransaction = require("@privy-io/react-auth").useSendTransaction;
+} catch {
+  useSendTransaction = () => ({
+    sendTransaction: async () => ({ transactionHash: "0x" }),
+  });
+}
 
 const publicClient = createPublicClient({
   chain: base,
   transport: http("https://mainnet.base.org"),
 });
 
+function appendSuffix(data: Hex): Hex {
+  return (data + DATA_SUFFIX.slice(2)) as Hex;
+}
+
 export function useContract() {
-  const { wallets } = useWallets();
+  const { sendTransaction } = useSendTransaction();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const getWalletClient = useCallback(async () => {
-    const wallet = wallets[0];
-    if (!wallet) throw new Error("No wallet connected");
-    await wallet.switchChain(8453);
-    const provider = await wallet.getEthereumProvider();
-    return createWalletClient({
-      chain: base,
-      transport: custom(provider as Parameters<typeof custom>[0]),
-      account: wallet.address as `0x${string}`,
-      dataSuffix: DATA_SUFFIX,
-    });
-  }, [wallets]);
-
   const startGame = useCallback(
-    async (gridSize: GridSize): Promise<{ success: boolean; nftMinted: boolean; tokenId?: string }> => {
+    async (
+      gridSize: GridSize
+    ): Promise<{ success: boolean; nftMinted: boolean; tokenId?: string }> => {
       setLoading(true);
       setError(null);
       try {
-        const client = await getWalletClient();
-        const hash = await client.writeContract({
-          address: GAME_CONTRACT_ADDRESS,
+        const calldata = encodeFunctionData({
           abi: GAME_CONTRACT_ABI,
           functionName: "startGame",
           args: [gridSize],
         });
-        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+
+        const { transactionHash } = await sendTransaction(
+          {
+            to: GAME_CONTRACT_ADDRESS,
+            data: appendSuffix(calldata),
+          },
+          { sponsor: true }
+        );
+
+        const receipt = await publicClient.waitForTransactionReceipt({
+          hash: transactionHash as `0x${string}`,
+        });
 
         let nftMinted = false;
         let tokenId: string | undefined;
@@ -63,7 +79,9 @@ export function useContract() {
             });
             if (event.eventName === "EarlyAdopterMinted") {
               nftMinted = true;
-              tokenId = String((event.args as unknown as { tokenId: bigint }).tokenId);
+              tokenId = String(
+                (event.args as unknown as { tokenId: bigint }).tokenId
+              );
             }
           } catch {
             /* skip non-matching logs */
@@ -83,21 +101,30 @@ export function useContract() {
         setLoading(false);
       }
     },
-    [getWalletClient]
+    [sendTransaction]
   );
 
   const gm = useCallback(async (): Promise<boolean> => {
     setLoading(true);
     setError(null);
     try {
-      const client = await getWalletClient();
-      const hash = await client.writeContract({
-        address: GAME_CONTRACT_ADDRESS,
+      const calldata = encodeFunctionData({
         abi: GAME_CONTRACT_ABI,
         functionName: "gm",
         args: [],
       });
-      await publicClient.waitForTransactionReceipt({ hash });
+
+      const { transactionHash } = await sendTransaction(
+        {
+          to: GAME_CONTRACT_ADDRESS,
+          data: appendSuffix(calldata),
+        },
+        { sponsor: true }
+      );
+
+      await publicClient.waitForTransactionReceipt({
+        hash: transactionHash as `0x${string}`,
+      });
       return true;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Transaction failed";
@@ -112,42 +139,41 @@ export function useContract() {
     } finally {
       setLoading(false);
     }
-  }, [getWalletClient]);
+  }, [sendTransaction]);
 
-  const canGm = useCallback(
-    async (address: string): Promise<boolean> => {
-      try {
-        const result = await publicClient.readContract({
-          address: GAME_CONTRACT_ADDRESS,
-          abi: GAME_CONTRACT_ABI,
-          functionName: "canGm",
-          args: [address as `0x${string}`],
-        });
-        return result as boolean;
-      } catch {
-        return false;
-      }
-    },
-    []
-  );
+  const canGm = useCallback(async (address: string): Promise<boolean> => {
+    try {
+      const result = await publicClient.readContract({
+        address: GAME_CONTRACT_ADDRESS,
+        abi: GAME_CONTRACT_ABI,
+        functionName: "canGm",
+        args: [address as `0x${string}`],
+      });
+      return result as boolean;
+    } catch {
+      return false;
+    }
+  }, []);
 
-  const getPlayerStats = useCallback(
-    async (address: string) => {
-      try {
-        const result = await publicClient.readContract({
-          address: GAME_CONTRACT_ADDRESS,
-          abi: GAME_CONTRACT_ABI,
-          functionName: "getPlayerStats",
-          args: [address as `0x${string}`],
-        });
-        const [games, streak, gms, hasNFT] = result as [number, number, number, boolean];
-        return { games: Number(games), streak: Number(streak), gms: Number(gms), hasNFT };
-      } catch {
-        return null;
-      }
-    },
-    []
-  );
+  const getPlayerStats = useCallback(async (address: string) => {
+    try {
+      const result = await publicClient.readContract({
+        address: GAME_CONTRACT_ADDRESS,
+        abi: GAME_CONTRACT_ABI,
+        functionName: "getPlayerStats",
+        args: [address as `0x${string}`],
+      });
+      const [games, streak, gms, hasNFT] = result as [number, number, number, boolean];
+      return {
+        games: Number(games),
+        streak: Number(streak),
+        gms: Number(gms),
+        hasNFT,
+      };
+    } catch {
+      return null;
+    }
+  }, []);
 
   return { startGame, gm, canGm, getPlayerStats, loading, error };
 }
