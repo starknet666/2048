@@ -3,56 +3,144 @@
 import { useCallback, useState } from "react";
 import {
   createPublicClient,
-  createWalletClient,
-  custom,
   http,
   decodeEventLog,
+  encodeFunctionData,
   type Hex,
 } from "viem";
 import { base } from "viem/chains";
 import { Attribution } from "ox/erc8021";
+import { useAuth } from "@/hooks/useAuth";
 import { GAME_CONTRACT_ADDRESS, GAME_CONTRACT_ABI } from "@/lib/contract";
 import type { GridSize } from "@/lib/game";
 
 const DATA_SUFFIX = Attribution.toDataSuffix({ codes: ["bc_vdsgq9gw"] });
-
-let useWallets: () => {
-  ready: boolean;
-  wallets: Array<{
-    address: string;
-    switchChain: (id: number) => Promise<void>;
-    getEthereumProvider: () => Promise<unknown>;
-  }>;
-};
-try {
-  useWallets = require("@privy-io/react-auth").useWallets;
-} catch {
-  useWallets = () => ({ ready: true, wallets: [] });
-}
+const PAYMASTER_URL =
+  typeof window !== "undefined"
+    ? `${window.location.origin}/api/paymaster`
+    : "/api/paymaster";
 
 const publicClient = createPublicClient({
   chain: base,
   transport: http("https://mainnet.base.org"),
 });
 
+type EthereumProvider = {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+};
+
+function getProvider(): EthereumProvider {
+  const ethereum = typeof window !== "undefined"
+    ? (window as unknown as { ethereum?: EthereumProvider }).ethereum
+    : undefined;
+  if (!ethereum) throw new Error("No wallet provider found");
+  return ethereum;
+}
+
+function appendSuffix(data: Hex): Hex {
+  return (data + DATA_SUFFIX.slice(2)) as Hex;
+}
+
+async function sendWithPaymaster(
+  provider: EthereumProvider,
+  from: string,
+  to: string,
+  data: Hex
+): Promise<string> {
+  try {
+    const result = await provider.request({
+      method: "wallet_sendCalls",
+      params: [
+        {
+          version: "1",
+          from,
+          chainId: `0x${(8453).toString(16)}`,
+          calls: [{ to, data }],
+          capabilities: {
+            paymasterService: {
+              url: PAYMASTER_URL,
+            },
+          },
+        },
+      ],
+    });
+    const callId = result as string;
+
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        const status = (await provider.request({
+          method: "wallet_getCallsStatus",
+          params: [callId],
+        })) as { status: string; receipts?: Array<{ transactionHash: string }> };
+
+        if (status.status === "CONFIRMED" && status.receipts?.[0]) {
+          return status.receipts[0].transactionHash;
+        }
+      } catch {
+        /* keep polling */
+      }
+    }
+    throw new Error("Transaction timed out");
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (
+      msg.includes("not supported") ||
+      msg.includes("not found") ||
+      msg.includes("does not support")
+    ) {
+      throw new Error("FALLBACK");
+    }
+    throw e;
+  }
+}
+
+async function sendRegular(
+  provider: EthereumProvider,
+  from: string,
+  to: string,
+  data: Hex
+): Promise<string> {
+  const hash = await provider.request({
+    method: "eth_sendTransaction",
+    params: [{ from, to, data }],
+  });
+  return hash as string;
+}
+
 export function useContract() {
-  const { ready, wallets } = useWallets();
+  const { address: authAddress } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const getWalletClient = useCallback(async () => {
-    if (!ready) throw new Error("Wallet loading, please try again");
-    const wallet = wallets[0];
-    if (!wallet) throw new Error("Please connect your wallet first");
-    await wallet.switchChain(8453);
-    const provider = await wallet.getEthereumProvider();
-    return createWalletClient({
-      chain: base,
-      transport: custom(provider as Parameters<typeof custom>[0]),
-      account: wallet.address as `0x${string}`,
-      dataSuffix: DATA_SUFFIX as Hex,
-    });
-  }, [wallets]);
+  const sendTx = useCallback(
+    async (data: Hex): Promise<string> => {
+      if (!authAddress) throw new Error("Please connect your wallet first");
+      const provider = getProvider();
+      const calldata = appendSuffix(data);
+
+      try {
+        return await sendWithPaymaster(
+          provider,
+          authAddress,
+          GAME_CONTRACT_ADDRESS,
+          calldata
+        );
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "";
+        if (msg === "FALLBACK") {
+          return await sendRegular(
+            provider,
+            authAddress,
+            GAME_CONTRACT_ADDRESS,
+            calldata
+          );
+        }
+        throw e;
+      }
+    },
+    [authAddress]
+  );
 
   const startGame = useCallback(
     async (
@@ -61,15 +149,16 @@ export function useContract() {
       setLoading(true);
       setError(null);
       try {
-        const client = await getWalletClient();
-        const hash = await client.writeContract({
-          address: GAME_CONTRACT_ADDRESS,
+        const data = encodeFunctionData({
           abi: GAME_CONTRACT_ABI,
           functionName: "startGame",
           args: [gridSize],
         });
 
-        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+        const hash = await sendTx(data);
+        const receipt = await publicClient.waitForTransactionReceipt({
+          hash: hash as `0x${string}`,
+        });
 
         let nftMinted = false;
         let tokenId: string | undefined;
@@ -104,21 +193,23 @@ export function useContract() {
         setLoading(false);
       }
     },
-    [getWalletClient]
+    [sendTx]
   );
 
   const gm = useCallback(async (): Promise<boolean> => {
     setLoading(true);
     setError(null);
     try {
-      const client = await getWalletClient();
-      const hash = await client.writeContract({
-        address: GAME_CONTRACT_ADDRESS,
+      const data = encodeFunctionData({
         abi: GAME_CONTRACT_ABI,
         functionName: "gm",
         args: [],
       });
-      await publicClient.waitForTransactionReceipt({ hash });
+
+      const hash = await sendTx(data);
+      await publicClient.waitForTransactionReceipt({
+        hash: hash as `0x${string}`,
+      });
       return true;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Transaction failed";
@@ -133,7 +224,7 @@ export function useContract() {
     } finally {
       setLoading(false);
     }
-  }, [getWalletClient]);
+  }, [sendTx]);
 
   const canGm = useCallback(async (address: string): Promise<boolean> => {
     try {
