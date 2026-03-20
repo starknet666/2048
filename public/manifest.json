@@ -1,0 +1,16 @@
+{
+  "name": "2048 on Base",
+  "short_name": "2048",
+  "description": "The classic 2048 puzzle game, onchain on Base",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f0f2f5",
+  "theme_color": "#0052FF",
+  "icons": [
+    {
+      "src": "/app-icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png"
+    }
+  ]
+}
