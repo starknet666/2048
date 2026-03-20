@@ -3,9 +3,10 @@
 import { useCallback, useState } from "react";
 import {
   createPublicClient,
+  createWalletClient,
+  custom,
   http,
   decodeEventLog,
-  encodeFunctionData,
   type Hex,
 } from "viem";
 import { base } from "viem/chains";
@@ -15,18 +16,18 @@ import type { GridSize } from "@/lib/game";
 
 const DATA_SUFFIX = Attribution.toDataSuffix({ codes: ["bc_vdsgq9gw"] });
 
-let useSendTransaction: () => {
-  sendTransaction: (
-    tx: { to: string; data: string; value?: number },
-    opts?: { sponsor?: boolean }
-  ) => Promise<{ transactionHash: string }>;
+let useWallets: () => {
+  ready: boolean;
+  wallets: Array<{
+    address: string;
+    switchChain: (id: number) => Promise<void>;
+    getEthereumProvider: () => Promise<unknown>;
+  }>;
 };
 try {
-  useSendTransaction = require("@privy-io/react-auth").useSendTransaction;
+  useWallets = require("@privy-io/react-auth").useWallets;
 } catch {
-  useSendTransaction = () => ({
-    sendTransaction: async () => ({ transactionHash: "0x" }),
-  });
+  useWallets = () => ({ ready: true, wallets: [] });
 }
 
 const publicClient = createPublicClient({
@@ -34,14 +35,24 @@ const publicClient = createPublicClient({
   transport: http("https://mainnet.base.org"),
 });
 
-function appendSuffix(data: Hex): Hex {
-  return (data + DATA_SUFFIX.slice(2)) as Hex;
-}
-
 export function useContract() {
-  const { sendTransaction } = useSendTransaction();
+  const { ready, wallets } = useWallets();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const getWalletClient = useCallback(async () => {
+    if (!ready) throw new Error("Wallet loading, please try again");
+    const wallet = wallets[0];
+    if (!wallet) throw new Error("Please connect your wallet first");
+    await wallet.switchChain(8453);
+    const provider = await wallet.getEthereumProvider();
+    return createWalletClient({
+      chain: base,
+      transport: custom(provider as Parameters<typeof custom>[0]),
+      account: wallet.address as `0x${string}`,
+      dataSuffix: DATA_SUFFIX as Hex,
+    });
+  }, [wallets]);
 
   const startGame = useCallback(
     async (
@@ -50,23 +61,15 @@ export function useContract() {
       setLoading(true);
       setError(null);
       try {
-        const calldata = encodeFunctionData({
+        const client = await getWalletClient();
+        const hash = await client.writeContract({
+          address: GAME_CONTRACT_ADDRESS,
           abi: GAME_CONTRACT_ABI,
           functionName: "startGame",
           args: [gridSize],
         });
 
-        const { transactionHash } = await sendTransaction(
-          {
-            to: GAME_CONTRACT_ADDRESS,
-            data: appendSuffix(calldata),
-          },
-          { sponsor: true }
-        );
-
-        const receipt = await publicClient.waitForTransactionReceipt({
-          hash: transactionHash as `0x${string}`,
-        });
+        const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
         let nftMinted = false;
         let tokenId: string | undefined;
@@ -101,30 +104,21 @@ export function useContract() {
         setLoading(false);
       }
     },
-    [sendTransaction]
+    [getWalletClient]
   );
 
   const gm = useCallback(async (): Promise<boolean> => {
     setLoading(true);
     setError(null);
     try {
-      const calldata = encodeFunctionData({
+      const client = await getWalletClient();
+      const hash = await client.writeContract({
+        address: GAME_CONTRACT_ADDRESS,
         abi: GAME_CONTRACT_ABI,
         functionName: "gm",
         args: [],
       });
-
-      const { transactionHash } = await sendTransaction(
-        {
-          to: GAME_CONTRACT_ADDRESS,
-          data: appendSuffix(calldata),
-        },
-        { sponsor: true }
-      );
-
-      await publicClient.waitForTransactionReceipt({
-        hash: transactionHash as `0x${string}`,
-      });
+      await publicClient.waitForTransactionReceipt({ hash });
       return true;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Transaction failed";
@@ -139,7 +133,7 @@ export function useContract() {
     } finally {
       setLoading(false);
     }
-  }, [sendTransaction]);
+  }, [getWalletClient]);
 
   const canGm = useCallback(async (address: string): Promise<boolean> => {
     try {
