@@ -55,7 +55,8 @@ export default function Home() {
           <WalletConnect />
         </header>
 
-        <div className="flex-1 flex items-center justify-center min-h-0 pb-6 overflow-y-auto">
+        <div className={`flex-1 flex min-h-0 pb-6 overflow-y-auto
+          ${screen === "leaderboard" ? "items-start" : "items-center justify-center"}`}>
           {screen === "menu" && (
             <ModeSelect
               onSelectMode={handleSelectMode}
