@@ -51,6 +51,19 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <Providers>{children}</Providers>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if (window.parent !== window) {
+                window.parent.postMessage(JSON.stringify({
+                  jsonrpc: "2.0",
+                  method: "frame_ready",
+                  params: {}
+                }), "*");
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   );

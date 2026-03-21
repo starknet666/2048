@@ -10,6 +10,7 @@
     "subtitle": "Swipe, merge, win — on Base",
     "description": "Play the classic 2048 puzzle on Base. Slide tiles, merge numbers, chase the 2048 tile — fast, simple, and onchain.",
     "iconUrl": "https://2048onbased.vercel.app/app-icon-1024.png",
+    "imageUrl": "https://2048onbased.vercel.app/app-thumbnail.png",
     "splashImageUrl": "https://2048onbased.vercel.app/app-thumbnail.png",
     "splashBackgroundColor": "#f0f2f5",
     "homeUrl": "https://2048onbased.vercel.app",
